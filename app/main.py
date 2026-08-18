@@ -1,50 +1,44 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
-class Task(BaseModel):
-    title: str
-    description: str
-    completed: bool = False
+from fastapi import FastAPI
 
-app = FastAPI()
+from app.core.config import settings
+from app.db.base import Base
+from app.db.session import engine
+from app.features.tasks.router import router as task_router
 
-@app.get("/tasks/{task_id}")
-def get_task(task_id: int):
-    if task_id != 1:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return {
-        "task_id": task_id,
-        "title": "Learn FastAPI",
-    }
+# Important:
+# Import models so SQLAlchemy knows about them
+from app.features.tasks.model import Task  # noqa: F401
 
-@app.post("/tasks")
-def create_task(task: Task):
-    return task
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            Base.metadata.create_all
+        )
+
+    yield
+
+    await engine.dispose()
+
+
+app = FastAPI(
+    title=settings.app_name,
+    debug=settings.debug,
+    lifespan=lifespan,
+)
+
+
+app.include_router(
+    task_router,
+    prefix="/api/v1",
+)
+
 
 @app.get("/")
-def home():
-    return {"message": "Hello, FastAPI!"}
-
-@app.get("/users")
-def get_users():
-    return {"message": "Get users"}
-
-@app.post("/users")
-def create_user():
-    return {"message": "Create user"}
-
-
-@app.put("/users/{id}")
-def update_user(id: int):
-    return {"message": f"Update user with id {id}"}
-
-@app.delete("/users/{id}")
-def delete_user(id: int):
-    return {"message": f"Delete user with id {id}"}
-
-
-@app.get("/tasks")
-def get_tasks(limit: int = 10):
-    return {"limit": limit}
-
-
+async def root():
+    return {
+        "message": "Task Management API"
+    }
